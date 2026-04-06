@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>High Res Camera</title>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,6 +14,7 @@
             text-align: center;
             background-color: #f5f5f5;
         }
+
         #video {
             width: 100%;
             max-width: 500px;
@@ -21,19 +23,18 @@
             background-color: #000;
             display: none;
         }
-        #canvas {
-            display: none;
-        }
+
         #status {
             margin: 20px 0;
             padding: 15px;
             border-radius: 4px;
             font-weight: bold;
         }
+
         .success { background-color: #d4edda; color: #155724; }
         .error { background-color: #f8d7da; color: #721c24; }
         .info { background-color: #d1ecf1; color: #0c5460; }
-        .hidden { display: none; }
+
         .loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #3498db;
@@ -43,130 +44,109 @@
             animation: spin 2s linear infinite;
             margin: 20px auto;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #gallery img {
+            width: 200px;
+            margin: 10px;
+            border-radius: 8px;
+        }
     </style>
 </head>
+
 <body>
-    <h1>High Resolution Camera</h1>
-    <div id="status" class="info">Requesting High-Res Camera... Please allow access.</div>
-    <div class="loader" id="loader"></div>
-    
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas"></canvas>
-    
-    <div id="retryContainer" class="hidden">
-        <button id="retryBtn">Try Again</button>
-    </div>
 
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const retryBtn = document.getElementById('retryBtn');
-        const retryContainer = document.getElementById('retryContainer');
-        const status = document.getElementById('status');
-        const loader = document.getElementById('loader');
-        
-        let stream = null;
+<h1>High Resolution Camera</h1>
 
-        // Configuration for High Resolution
-        const constraints = {
-            video: {
-                width: { ideal: 1920 }, // 1080p
-                height: { ideal: 1080 },
-                facingMode: "environment" // Uses back camera on phones
-            },
-            audio: false
-        };
+<div id="status" class="info">Requesting Camera...</div>
+<div class="loader" id="loader"></div>
 
-        window.addEventListener('load', () => {
-            startCameraProcess();
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas" style="display:none;"></canvas>
+
+<button id="retryBtn">Take Photo</button>
+
+<h2>Gallery</h2>
+<div id="gallery"></div>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const retryBtn = document.getElementById('retryBtn');
+const status = document.getElementById('status');
+const loader = document.getElementById('loader');
+
+let stream = null;
+
+const constraints = {
+    video: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        facingMode: "environment"
+    }
+};
+
+retryBtn.onclick = startCamera;
+
+function startCamera() {
+    navigator.mediaDevices.getUserMedia(constraints)
+    .then(s => {
+        stream = s;
+        video.srcObject = stream;
+        video.style.display = 'block';
+
+        setTimeout(capturePhoto, 1000);
+    })
+    .catch(err => {
+        status.textContent = "Camera error: " + err.message;
+    });
+}
+
+function capturePhoto() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('photo', blob, 'photo.jpg');
+
+        fetch('/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(() => {
+            status.textContent = "Uploaded!";
+            loadGallery(); // 🔥 reload gallery after upload
         });
+    }, 'image/jpeg', 0.9);
+}
 
-        async function startCameraProcess() {
-            try {
-                updateStatus('Accessing high-resolution camera...', 'info');
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                
-                // Wait for stream to stabilize
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                captureAndSendPhoto();
-                
-            } catch (err) {
-                updateStatus('Error accessing camera: ' + err.message, 'error');
-                loader.style.display = 'none';
-                retryContainer.classList.remove('hidden');
-            }
-        }
+function loadGallery() {
+    fetch('/images')
+    .then(res => res.json())
+    .then(files => {
+        const gallery = document.getElementById('gallery');
+        gallery.innerHTML = "";
 
-        retryBtn.addEventListener('click', () => {
-            retryContainer.classList.add('hidden');
-            loader.style.display = 'block';
-            startCameraProcess();
+        files.forEach(file => {
+            const img = document.createElement('img');
+            img.src = '/uploads/' + file;
+            gallery.appendChild(img);
         });
+    });
+}
 
-        function captureAndSendPhoto() {
-            // Set canvas to match the actual stream resolution (now high res)
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            const context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Convert to JPEG with HIGH quality (0.92)
-            const imageData = canvas.toDataURL('image/jpeg', 0.92); 
-            
-            updateStatus('Capturing high-res photo...', 'info');
+// Load gallery on page load
+loadGallery();
+</script>
 
-            // Convert base64 to blob
-            const byteString = atob(imageData.split(',')[1]);
-            const mimeString = imageData.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-            
-            const blob = new Blob([ab], { type: mimeString });
-            
-            const formData = new FormData();
-            formData.append('photo', blob, 'photo.jpg');
-            
-            updateStatus('Uploading high-res photo...', 'info');
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) throw new Error('Network response was not ok');
-                return response.json();
-            })
-            .then(data => {
-                updateStatus('Photo uploaded successfully!', 'success');
-                loader.style.display = 'none';
-                video.style.display = 'block';
-                
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                }
-                retryContainer.classList.remove('hidden');
-                retryBtn.textContent = 'Take Another Photo';
-            })
-            .catch(error => {
-                updateStatus('Error uploading: ' + error.message, 'error');
-                loader.style.display = 'none';
-                retryContainer.classList.remove('hidden');
-                retryBtn.textContent = 'Retry';
-            });
-        }
-
-        function updateStatus(message, type) {
-            status.textContent = message;
-            status.className = type;
-        }
-    </script>
 </body>
 </html>

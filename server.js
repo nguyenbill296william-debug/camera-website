@@ -4,43 +4,53 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const PORT = process.env.PORT || 3000;
 
-// Configure multer for file uploads
+// Ensure uploads folder exists
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
+
+// Configure multer
 const upload = multer({ 
     dest: 'uploads/',
     limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB max file size
+        fileSize: 10 * 1024 * 1024
     }
 });
 
-// Serve the HTML file
+// 🔥 VERY IMPORTANT — serve uploads folder
+app.use('/uploads', express.static('uploads'));
+
+// Serve HTML
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Handle photo upload
+// Upload route
 app.post('/upload', upload.single('photo'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    // File is saved in req.file.path
+
     console.log('Photo received:', req.file.originalname);
-    
-    // Here you could:
-    // - Save to a database
-    // - Send to your email
-    // - Store in cloud storage
-    // - Process the image
-    
+
     res.json({ 
         success: true, 
-        message: 'Photo received successfully',
         filename: req.file.filename
     });
 });
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+// 🔥 NEW — get all uploaded images
+app.get('/images', (req, res) => {
+    fs.readdir('uploads', (err, files) => {
+        if (err) {
+            return res.status(500).json({ error: 'Cannot read uploads folder' });
+        }
+        res.json(files);
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running`);
 });
